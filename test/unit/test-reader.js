@@ -6,6 +6,8 @@ const proxyquire = require('proxyquire');
 const EventEmitter = require('events').EventEmitter;
 const globExtra = require('glob-extra');
 const SetCollection = require('gemini-core/lib/test-reader/set-collection');
+const SetBuilder = require('gemini-core/lib/test-reader/set-builder');
+const TestSet = require('gemini-core/lib/test-reader/test-set');
 const CoreError = require('gemini-core/lib/errors/core-error');
 const GeminiError = require('lib/errors/gemini-error');
 
@@ -14,9 +16,22 @@ const utils = require('lib/utils');
 describe('test-reader', () => {
     const sandbox = sinon.sandbox.create();
     const testsApi = sandbox.stub();
-    let setCollection = sinon.createStubInstance(SetCollection);
+    const validateUnknownSets = sandbox.stub();
+    const setBuilder = sinon.createStubInstance(SetBuilder);
 
+    let setCollection = sinon.createStubInstance(SetCollection);
     let readTests;
+
+    const mkConfigStub = (opts) => {
+        opts = opts || {};
+
+        return _.defaultsDeep(opts, {
+            getBrowserIds: sandbox.stub().returns(opts.browsers || []),
+            system: {
+                projectRoot: '/root'
+            }
+        });
+    };
 
     const readTests_ = (opts) => {
         const REQUIRED_OPTS = {
@@ -26,24 +41,29 @@ describe('test-reader', () => {
         };
 
         opts = _.defaults(opts || {}, {
+            sets: {},
             paths: [],
             config: {},
             emitter: new EventEmitter()
         });
-
         opts.config = _.defaultsDeep(opts.config, REQUIRED_OPTS);
 
         return readTests({paths: opts.paths, sets: opts.sets}, opts.config, opts.emitter);
     };
 
+    const mkSetStub = (opts) => TestSet.create(opts);
+
     beforeEach(() => {
         sandbox.stub(utils, 'requireWithNoCache');
         sandbox.stub(globExtra, 'expandPaths').returns(Promise.resolve([]));
-        sandbox.stub(SetCollection.prototype, 'filterFiles');
-        sandbox.stub(SetCollection, 'create');
+        sandbox.stub(SetBuilder, 'create').returns(setBuilder);
+        setBuilder.useSets.returns(setBuilder);
+        setBuilder.useFiles.returns(setBuilder);
+        setBuilder.build.returns(Promise.resolve(setCollection));
 
         readTests = proxyquire('lib/test-reader', {
-            './tests-api': testsApi
+            './tests-api': testsApi,
+            'gemini-core/lib/utils/unknown-sets-validator': validateUnknownSets
         });
     });
 
@@ -53,80 +73,72 @@ describe('test-reader', () => {
     });
 
     describe('read tests', () => {
-        beforeEach(() => {
-            SetCollection.create.returns(setCollection);
-        });
-
-        it('should create set-collection with passed options and config', () => {
+        it('should create set-builder using passed options and browsers from config', () => {
             const opts = {
-                paths: ['some/path'],
-                sets: {
-                    all: {}
-                },
-                config: {
-                    system: {
-                        projectRoot: '/project/root'
-                    }
-                }
+                config: mkConfigStub({
+                    sets: {
+                        all: {}
+                    },
+                    browsers: ['bro1', 'bro2']
+                })
             };
 
             return readTests_(opts)
-                .then(() => assert.calledWith(SetCollection.create, opts.config, {
-                    paths: opts.paths,
-                    sets: opts.sets
-                }));
+                .then(() => assert.calledWith(SetBuilder.create, {all: {}}, ['bro1', 'bro2']));
         });
 
         it('should use gemini folder if sets are not specified in config and paths are not passed', () => {
-            const config = {
-                getBrowserIds: () => []
-            };
-
-            globExtra.expandPaths.withArgs(['/root/gemini']).returns(Promise.resolve(['/root/gemini/file.js']));
+            const config = mkConfigStub({
+                system: {
+                    projectRoot: '/project/root'
+                }
+            });
 
             return readTests_({config})
-                .then(() => assert.calledWith(setCollection.filterFiles, ['/root/gemini/file.js']));
+                .then(() => assert.calledWith(setBuilder.useFiles, ['/project/root/gemini']));
         });
 
-        it('should expand passed paths from cli', () => {
-            return readTests_({paths: ['some/path']})
-                .then(() => assert.calledWith(globExtra.expandPaths, ['some/path']));
+        it('should use paths passed from cli', () => {
+            return readTests_({paths: ['some/path'], config: mkConfigStub()})
+                .then(() => assert.calledWith(setBuilder.useFiles, ['some/path']));
         });
 
-        it('should reject with gemini-error, if core error was thrown', () => {
-            setCollection.filterFiles.throws(new CoreError());
+        it('should validate unknown sets', () => {
+            const config = mkConfigStub({
+                sets: {
+                    set1: {}
+                }
+            });
 
-            return assert.isRejected(readTests_(), GeminiError);
+            return readTests_({sets: ['set2'], config})
+                .then(() => assert.calledWith(validateUnknownSets, ['set1'], ['set2']));
         });
 
-        it('should reject with simple error, if simple error was thrown', () => {
-            setCollection.filterFiles.throws(new Error());
+        it('should be rejected with gemini-error, if core error was thrown', () => {
+            setBuilder.build.returns(Promise.reject(new CoreError()));
 
-            return assert.isRejected(readTests_(), Error);
+            return assert.isRejected(readTests_({config: mkConfigStub()}), GeminiError);
+        });
+
+        it('should be rejected with native error, if native error was thrown', () => {
+            setBuilder.build.returns(Promise.reject(new CoreError()));
+
+            return assert.isRejected(readTests_({config: mkConfigStub()}), Error);
         });
     });
 
     describe('global "gemini" variable', () => {
         let gemini;
-        let config;
 
         beforeEach(() => {
-            config = {
-                sets: {
-                    set: {
-                        files: ['some/files']
-                    }
-                },
-                getBrowserIds: () => []
+            const sets = {
+                all: mkSetStub({
+                    files: ['some/files', 'other/files/']
+                })
             };
+            setCollection = SetCollection.create(sets);
 
-            setCollection = new SetCollection({
-                set: {
-                    files: ['some/files', 'other/files']
-                }
-            });
-            SetCollection.create.returns(setCollection);
-
+            setBuilder.build.returns(Promise.resolve(setCollection));
             utils.requireWithNoCache.restore();
         });
 
@@ -136,7 +148,7 @@ describe('test-reader', () => {
 
             testsApi.returns(api);
 
-            return readTests_({config})
+            return readTests_({config: mkConfigStub()})
                 .then(() => assert.deepEqual(gemini, api));
         });
 
@@ -153,7 +165,7 @@ describe('test-reader', () => {
                 globalGemini.push(global.gemini.suite);
             });
 
-            return readTests_({config})
+            return readTests_({config: mkConfigStub()})
                 .then(() => assert.deepEqual(globalGemini, ['apiInstance', 'anotherApiInstance']));
         });
 
@@ -162,18 +174,19 @@ describe('test-reader', () => {
             globExtra.expandPaths.returns(Promise.resolve(['some-test.js']));
             sandbox.stub(utils, 'requireWithNoCache');
 
-            return readTests_({config}).then(() => assert.notProperty(global, 'gemini'));
+            return readTests_({config: mkConfigStub()}).then(() => assert.notProperty(global, 'gemini'));
         });
     });
 
     describe('events', () => {
         beforeEach(() => {
-            setCollection = new SetCollection({
-                set: {
+            const sets = {
+                all: mkSetStub({
                     files: ['/some/path/file.js']
-                }
-            });
-            SetCollection.create.returns(setCollection);
+                })
+            };
+            setCollection = SetCollection.create(sets);
+            setBuilder.build.returns(Promise.resolve(setCollection));
         });
 
         it('should emit "beforeFileRead" before reading each file', () => {
@@ -182,7 +195,7 @@ describe('test-reader', () => {
             const emitter = new EventEmitter();
             emitter.on('beforeFileRead', beforeReadSpy);
 
-            return readTests_({emitter})
+            return readTests_({config: mkConfigStub(), emitter})
                 .then(() => {
                     assert.calledWithExactly(beforeReadSpy, '/some/path/file.js');
                     assert.callOrder(beforeReadSpy, utils.requireWithNoCache);
@@ -195,7 +208,7 @@ describe('test-reader', () => {
             const emitter = new EventEmitter();
             emitter.on('afterFileRead', afterReadSpy);
 
-            return readTests_({emitter})
+            return readTests_({config: mkConfigStub(), emitter})
                 .then(() => {
                     assert.calledWithExactly(afterReadSpy, '/some/path/file.js');
                     assert.callOrder(utils.requireWithNoCache, afterReadSpy);
