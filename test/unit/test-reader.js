@@ -17,9 +17,7 @@ describe('test-reader', () => {
     const sandbox = sinon.sandbox.create();
     const testsApi = sandbox.stub();
     const validateUnknownSets = sandbox.stub();
-    const setBuilder = sinon.createStubInstance(SetBuilder);
 
-    let setCollection = sinon.createStubInstance(SetCollection);
     let readTests;
 
     const mkConfigStub = (opts) => {
@@ -56,10 +54,11 @@ describe('test-reader', () => {
     beforeEach(() => {
         sandbox.stub(utils, 'requireWithNoCache');
         sandbox.stub(globExtra, 'expandPaths').returns(Promise.resolve([]));
-        sandbox.stub(SetBuilder, 'create').returns(setBuilder);
-        setBuilder.useSets.returns(setBuilder);
-        setBuilder.useFiles.returns(setBuilder);
-        setBuilder.build.returns(Promise.resolve(setCollection));
+        sandbox.stub(SetBuilder.prototype, 'useFiles').returnsThis();
+        sandbox.stub(SetBuilder.prototype, 'useSets').returnsThis();
+
+        const setCollection = sinon.createStubInstance(SetCollection);
+        sandbox.stub(SetBuilder.prototype, 'build').returns(Promise.resolve(setCollection));
 
         readTests = proxyquire('lib/test-reader', {
             './tests-api': testsApi,
@@ -74,6 +73,7 @@ describe('test-reader', () => {
 
     describe('read tests', () => {
         it('should create set-builder using passed options and browsers from config', () => {
+            const create = sandbox.spy(SetBuilder, 'create');
             const opts = {
                 config: mkConfigStub({
                     sets: {
@@ -84,7 +84,7 @@ describe('test-reader', () => {
             };
 
             return readTests_(opts)
-                .then(() => assert.calledWith(SetBuilder.create, {all: {}}, ['bro1', 'bro2']));
+                .then(() => assert.calledWith(create, {all: {}}, ['bro1', 'bro2']));
         });
 
         it('should use gemini folder if sets are not specified in config and paths are not passed', () => {
@@ -95,12 +95,12 @@ describe('test-reader', () => {
             });
 
             return readTests_({config})
-                .then(() => assert.calledWith(setBuilder.useFiles, ['/project/root/gemini']));
+                .then(() => assert.calledWith(SetBuilder.prototype.useFiles, ['/project/root/gemini']));
         });
 
         it('should use paths passed from cli', () => {
             return readTests_({paths: ['some/path'], config: mkConfigStub()})
-                .then(() => assert.calledWith(setBuilder.useFiles, ['some/path']));
+                .then(() => assert.calledWith(SetBuilder.prototype.useFiles, ['some/path']));
         });
 
         it('should validate unknown sets', () => {
@@ -115,13 +115,13 @@ describe('test-reader', () => {
         });
 
         it('should be rejected with gemini-error, if core error was thrown', () => {
-            setBuilder.build.returns(Promise.reject(new CoreError()));
+            SetBuilder.prototype.build.returns(Promise.reject(new CoreError()));
 
             return assert.isRejected(readTests_({config: mkConfigStub()}), GeminiError);
         });
 
         it('should be rejected with native error, if native error was thrown', () => {
-            setBuilder.build.returns(Promise.reject(new CoreError()));
+            SetBuilder.prototype.build.returns(Promise.reject(new CoreError()));
 
             return assert.isRejected(readTests_({config: mkConfigStub()}), Error);
         });
@@ -136,9 +136,9 @@ describe('test-reader', () => {
                     files: ['some/files', 'other/files/']
                 })
             };
-            setCollection = SetCollection.create(sets);
+            const setCollection = SetCollection.create(sets);
+            SetBuilder.prototype.build.returns(Promise.resolve(setCollection));
 
-            setBuilder.build.returns(Promise.resolve(setCollection));
             utils.requireWithNoCache.restore();
         });
 
@@ -185,8 +185,8 @@ describe('test-reader', () => {
                     files: ['/some/path/file.js']
                 })
             };
-            setCollection = SetCollection.create(sets);
-            setBuilder.build.returns(Promise.resolve(setCollection));
+            const setCollection = SetCollection.create(sets);
+            SetBuilder.prototype.build.returns(Promise.resolve(setCollection));
         });
 
         it('should emit "beforeFileRead" before reading each file', () => {
