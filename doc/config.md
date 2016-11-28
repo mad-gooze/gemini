@@ -252,7 +252,7 @@ sets:
 
 * `browsers` - list of browser ids to run tests specified in `files`. All browsers by default.
 
-If sets are not specified in config, all files from `gemini` directory will be launched in all browsers specified in config.
+If sets are not specified in config, all files from `gemini` directory will be launched in all browsers specified from config.
 
 You can specify sets to run using CLI option [`--set`](./commands.md#common-cli-options).
 
