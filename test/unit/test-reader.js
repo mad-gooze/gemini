@@ -11,8 +11,8 @@ const utils = require('lib/utils');
 
 describe('test-reader', () => {
     const sandbox = sinon.sandbox.create();
-    const testsApi = sandbox.stub();
 
+    let testsApi;
     let readTests;
 
     const mkConfigStub = (opts) => {
@@ -36,7 +36,7 @@ describe('test-reader', () => {
         opts = _.defaults(opts || {}, {
             sets: {},
             paths: [],
-            config: {},
+            config: mkConfigStub(),
             emitter: new EventEmitter()
         });
         opts.config = _.defaultsDeep(opts.config, REQUIRED_OPTS);
@@ -57,36 +57,53 @@ describe('test-reader', () => {
             };
         };
         sandbox.stub(SetsBuilder.prototype, 'build').returns(Promise.resolve({groupByFile}));
-
+        testsApi = sandbox.stub();
         readTests = proxyquire('lib/test-reader', {
             './tests-api': testsApi
         });
     });
 
-    afterEach(() => {
-        sandbox.restore();
-        testsApi.reset();
-    });
+    afterEach(() => sandbox.restore());
 
     describe('read tests', () => {
-        it('should create set-builder using passed options and browsers from config', () => {
-            const create = sandbox.spy(SetsBuilder, 'create');
+        let create;
+
+        beforeEach(() => create = sandbox.spy(SetsBuilder, 'create'));
+
+        it('should create set-builder with sets from config and default directory', () => {
+            const defaultDir = require('../../package').name;
             const opts = {
                 config: mkConfigStub({
                     sets: {
                         all: {}
-                    },
-                    browsers: ['bro1', 'bro2']
+                    }
                 })
             };
 
             return readTests_(opts)
-                .then(() => assert.calledWith(create, {all: {}}, ['bro1', 'bro2']));
+                .then(() => assert.calledWith(create, {all: {}}, {defaultDir}));
+        });
+
+        it('should use sets passed from cli', () => {
+            return readTests_({sets: {all: {}}})
+                .then(() => assert.calledWith(SetsBuilder.prototype.useSets, {all: {}}));
         });
 
         it('should use paths passed from cli', () => {
-            return readTests_({paths: ['some/path'], config: mkConfigStub()})
+            return readTests_({paths: ['some/path']})
                 .then(() => assert.calledWith(SetsBuilder.prototype.useFiles, ['some/path']));
+        });
+
+        it('should build set-collection using project root and exlude options from config', () => {
+            const config = mkConfigStub({
+                system: {
+                    projectRoot: '/project/root',
+                    exclude: ['some/path']
+                }
+            });
+
+            return readTests_({config})
+                .then(() => assert.calledWith(SetsBuilder.prototype.build, '/project/root', {ignore: ['some/path']}));
         });
     });
 
@@ -103,7 +120,7 @@ describe('test-reader', () => {
 
             testsApi.returns(api);
 
-            return readTests_({config: mkConfigStub()})
+            return readTests_()
                 .then(() => assert.deepEqual(gemini, api));
         });
 
@@ -120,7 +137,7 @@ describe('test-reader', () => {
                 globalGemini.push(global.gemini.suite);
             });
 
-            return readTests_({config: mkConfigStub()})
+            return readTests_()
                 .then(() => assert.deepEqual(globalGemini, ['apiInstance', 'anotherApiInstance']));
         });
 
@@ -129,7 +146,7 @@ describe('test-reader', () => {
             globExtra.expandPaths.returns(Promise.resolve(['some-test.js']));
             sandbox.stub(utils, 'requireWithNoCache');
 
-            return readTests_({config: mkConfigStub()}).then(() => assert.notProperty(global, 'gemini'));
+            return readTests_().then(() => assert.notProperty(global, 'gemini'));
         });
     });
 
@@ -140,7 +157,7 @@ describe('test-reader', () => {
             const emitter = new EventEmitter();
             emitter.on('beforeFileRead', beforeReadSpy);
 
-            return readTests_({config: mkConfigStub(), emitter})
+            return readTests_({emitter})
                 .then(() => {
                     assert.calledWithExactly(beforeReadSpy, '/some/path/file1.js');
                     assert.callOrder(beforeReadSpy, utils.requireWithNoCache);
@@ -153,7 +170,7 @@ describe('test-reader', () => {
             const emitter = new EventEmitter();
             emitter.on('afterFileRead', afterReadSpy);
 
-            return readTests_({config: mkConfigStub(), emitter})
+            return readTests_({emitter})
                 .then(() => {
                     assert.calledWithExactly(afterReadSpy, '/some/path/file1.js');
                     assert.callOrder(utils.requireWithNoCache, afterReadSpy);
