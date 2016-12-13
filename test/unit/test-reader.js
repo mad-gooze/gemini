@@ -41,7 +41,7 @@ describe('test-reader', () => {
         });
         opts.config = _.defaultsDeep(opts.config, REQUIRED_OPTS);
 
-        return readTests({paths: opts.paths, sets: opts.sets}, opts.config, opts.emitter);
+        return readTests({paths: opts.paths, browsers: opts.browsers, sets: opts.sets}, opts.config, opts.emitter);
     };
 
     beforeEach(() => {
@@ -49,6 +49,7 @@ describe('test-reader', () => {
         sandbox.stub(globExtra, 'expandPaths').returns(Promise.resolve([]));
         sandbox.stub(SetsBuilder.prototype, 'useFiles').returnsThis();
         sandbox.stub(SetsBuilder.prototype, 'useSets').returnsThis();
+        sandbox.stub(SetsBuilder.prototype, 'useBrowsers').returnsThis();
 
         const groupByFile = () => {
             return {
@@ -65,10 +66,10 @@ describe('test-reader', () => {
 
     afterEach(() => sandbox.restore());
 
-    describe('read tests', () => {
-        let create;
+    describe('SetsBuilder calling', () => {
+        let createSetsBuilder;
 
-        beforeEach(() => create = sandbox.spy(SetsBuilder, 'create'));
+        beforeEach(() => createSetsBuilder = sandbox.spy(SetsBuilder, 'create'));
 
         it('should create set-builder with sets from config and default directory', () => {
             const defaultDir = require('../../package').name;
@@ -81,17 +82,34 @@ describe('test-reader', () => {
             };
 
             return readTests_(opts)
-                .then(() => assert.calledWith(create, {all: {}}, {defaultDir}));
+                .then(() => {
+                    assert.calledOnce(createSetsBuilder);
+                    assert.calledWithMatch(createSetsBuilder, {all: {}}, {defaultDir});
+                });
         });
 
         it('should use sets passed from cli', () => {
             return readTests_({sets: {all: {}}})
-                .then(() => assert.calledWith(SetsBuilder.prototype.useSets, {all: {}}));
+                .then(() => {
+                    assert.calledOnce(SetsBuilder.prototype.useSets);
+                    assert.calledWith(SetsBuilder.prototype.useSets, {all: {}});
+                });
         });
 
         it('should use paths passed from cli', () => {
             return readTests_({paths: ['some/path']})
-                .then(() => assert.calledWith(SetsBuilder.prototype.useFiles, ['some/path']));
+                .then(() => {
+                    assert.calledOnce(SetsBuilder.prototype.useFiles);
+                    assert.calledWith(SetsBuilder.prototype.useFiles, ['some/path']);
+                });
+        });
+
+        it('should use browsers passed from cli', () => {
+            return readTests_({browsers: ['bro1']})
+                .then(() => {
+                    assert.calledOnce(SetsBuilder.prototype.useBrowsers);
+                    assert.calledWith(SetsBuilder.prototype.useBrowsers, ['bro1']);
+                });
         });
 
         it('should build set-collection using project root and exlude options from config', () => {
@@ -103,7 +121,23 @@ describe('test-reader', () => {
             });
 
             return readTests_({config})
-                .then(() => assert.calledWith(SetsBuilder.prototype.build, '/project/root', {ignore: ['some/path']}));
+                .then(() => {
+                    assert.calledOnce(SetsBuilder.prototype.build);
+                    assert.calledWith(SetsBuilder.prototype.build, '/project/root', {ignore: ['some/path']});
+                });
+        });
+
+        it('should call set-builder methods in rigth order', () => {
+            return readTests_()
+                .then(() => {
+                    assert.callOrder(
+                        createSetsBuilder,
+                        SetsBuilder.prototype.useSets,
+                        SetsBuilder.prototype.useFiles,
+                        SetsBuilder.prototype.useBrowsers,
+                        SetsBuilder.prototype.build
+                    );
+                });
         });
     });
 

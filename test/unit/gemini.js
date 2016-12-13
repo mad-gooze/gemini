@@ -178,6 +178,17 @@ describe('gemini', () => {
                 });
         });
 
+        it('should pass browsers from cli to test-reader', () => {
+            const opts = {
+                cliOpts: {browsers: ['bro1']}
+            };
+
+            return runGeminiTest(opts)
+                .then(() => {
+                    assert.calledWithMatch(testReaderStub, sinon.match({browsers: ['bro1']}));
+                });
+        });
+
         it('should return SuiteCollection instance', () => {
             return readTests_()
                 .then((result) => {
@@ -306,7 +317,6 @@ describe('gemini', () => {
     describe('environment variables', () => {
         beforeEach(() => {
             sandbox.stub(SuiteCollection.prototype, 'skipBrowsers');
-            sandbox.stub(Runner.prototype, 'setTestBrowsers');
         });
 
         afterEach(() => {
@@ -318,14 +328,14 @@ describe('gemini', () => {
             process.env.GEMINI_BROWSERS = 'b1';
 
             return runGeminiTest({browserIds: ['b1', 'b2']})
-                .then(() => assert.calledWith(Runner.prototype.setTestBrowsers, ['b1']));
+                .then(() => assert.calledWithMatch(testReaderStub, {browsers: ['b1']}));
         });
 
         it('should handle spaces in value of GEMINI_BROWSERS', () => {
             process.env.GEMINI_BROWSERS = 'b1, b2';
 
             return runGeminiTest({browserIds: ['b1', 'b2']})
-                .then(() => assert.calledWith(Runner.prototype.setTestBrowsers, ['b1', 'b2']));
+                .then(() => assert.calledWithMatch(testReaderStub, {browsers: ['b1', 'b2']}));
         });
 
         it('should warn about unknown browsers in GEMINI_BROWSERS', () => {
@@ -335,11 +345,6 @@ describe('gemini', () => {
                 .then(() => {
                     assert.calledWith(console.warn, sinon.match('Unknown browsers id: b2'));
                 });
-        });
-
-        it('should not set tests browsers if browsers are not specified from cli option and env variable', () => {
-            return runGeminiTest()
-                .then(() => assert.notCalled(Runner.prototype.setTestBrowsers));
         });
 
         it('should skip browsers from GEMINI_SKIP_BROWSERS', () => {
