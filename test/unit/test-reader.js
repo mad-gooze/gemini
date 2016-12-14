@@ -27,21 +27,17 @@ describe('test-reader', () => {
     };
 
     const readTests_ = (opts) => {
-        const REQUIRED_OPTS = {
-            system: {
-                projectRoot: '/root'
-            }
-        };
-
-        opts = _.defaults(opts || {}, {
-            sets: {},
-            paths: [],
+        opts = _.defaultsDeep(opts || {}, {
             config: mkConfigStub(),
-            emitter: new EventEmitter()
+            emitter: new EventEmitter(),
+            options: {
+                sets: {},
+                paths: [],
+                browsers: []
+            }
         });
-        opts.config = _.defaultsDeep(opts.config, REQUIRED_OPTS);
 
-        return readTests({paths: opts.paths, browsers: opts.browsers, sets: opts.sets}, opts.config, opts.emitter);
+        return readTests(opts.emitter, opts.config, opts.options);
     };
 
     beforeEach(() => {
@@ -89,7 +85,7 @@ describe('test-reader', () => {
         });
 
         it('should use sets passed from cli', () => {
-            return readTests_({sets: {all: {}}})
+            return readTests_({options: {sets: {all: {}}}})
                 .then(() => {
                     assert.calledOnce(SetsBuilder.prototype.useSets);
                     assert.calledWith(SetsBuilder.prototype.useSets, {all: {}});
@@ -97,7 +93,7 @@ describe('test-reader', () => {
         });
 
         it('should use paths passed from cli', () => {
-            return readTests_({paths: ['some/path']})
+            return readTests_({options: {paths: ['some/path']}})
                 .then(() => {
                     assert.calledOnce(SetsBuilder.prototype.useFiles);
                     assert.calledWith(SetsBuilder.prototype.useFiles, ['some/path']);
@@ -105,7 +101,7 @@ describe('test-reader', () => {
         });
 
         it('should use browsers passed from cli', () => {
-            return readTests_({browsers: ['bro1']})
+            return readTests_({options: {browsers: ['bro1']}})
                 .then(() => {
                     assert.calledOnce(SetsBuilder.prototype.useBrowsers);
                     assert.calledWith(SetsBuilder.prototype.useBrowsers, ['bro1']);
