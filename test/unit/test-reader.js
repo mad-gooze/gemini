@@ -26,8 +26,8 @@ describe('test-reader', () => {
         });
     };
 
-    const readTests_ = (opts) => {
-        opts = _.defaultsDeep(opts || {}, {
+    const readTests_ = (params) => {
+        params = _.defaultsDeep(params || {}, {
             config: mkConfigStub(),
             emitter: new EventEmitter(),
             options: {
@@ -37,7 +37,7 @@ describe('test-reader', () => {
             }
         });
 
-        return readTests(opts.emitter, opts.config, opts.options);
+        return readTests(params.emitter, params.config, params.options);
     };
 
     beforeEach(() => {
