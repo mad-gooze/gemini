@@ -24,7 +24,7 @@
     "gemini-configparser": "^0.1.1",
     "gemini-core": "gemini-testing/gemini-core#add-test-reader",
     "gemini-coverage": "^1.0.0",
-    "glob-extra": "^1.3.2",
+    "glob-extra": "gemini-testing/glob-extra#fix-absolute-expanding",
     "handlebars": "^4.0.5",
     "inherit": "~2.2.1",
     "install": "^0.6.1",
